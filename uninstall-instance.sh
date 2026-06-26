@@ -8,20 +8,14 @@
 
 set -Eeuo pipefail
 
-#-------------------------------------------------------------------------------
-# Source libraries
-#-------------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 source "${SCRIPT_DIR}/lib/colors.sh"
 source "${SCRIPT_DIR}/lib/logging.sh"
+source "${SCRIPT_DIR}/lib/validation.sh"
 source "${SCRIPT_DIR}/lib/database.sh"
 source "${SCRIPT_DIR}/lib/nginx.sh"
 source "${SCRIPT_DIR}/lib/php.sh"
-
-#===============================================================================
-# VALIDATION
-#===============================================================================
 
 validate_path() {
     local path="$1"
@@ -31,10 +25,6 @@ validate_path() {
     fi
     return 0
 }
-
-#===============================================================================
-# MAIN
-#===============================================================================
 
 main() {
     echo -e "${BOLD}${RED}"
@@ -48,7 +38,6 @@ main() {
     echo -e "${YELLOW}WARNING: This will permanently remove a Moodle instance.${NC}"
     echo ""
 
-    # Gather instance name
     read -r -p "$(echo -e "${CYAN}Instance name to remove:${NC} ")" INSTANCE_NAME
     INSTANCE_NAME="${INSTANCE_NAME,,}"
     INSTANCE_NAME="${INSTANCE_NAME// /-}"
@@ -58,7 +47,6 @@ main() {
         exit 1
     fi
 
-    # Gather installation directory
     local DEFAULT_INSTALL_DIR="/srv/${INSTANCE_NAME}"
     read -r -p "$(echo -e "${CYAN}Installation directory${NC} [${DEFAULT_INSTALL_DIR}]: ")" INSTALL_DIR
     INSTALL_DIR="${INSTALL_DIR:-${DEFAULT_INSTALL_DIR}}"
@@ -66,7 +54,6 @@ main() {
 
     validate_path "${INSTALL_DIR}"
 
-    # Gather database info
     local DEFAULT_DB_NAME="${INSTANCE_NAME//-/_}"
     local DEFAULT_DB_USER="${INSTANCE_NAME//-/_}"
     if [[ ${#DEFAULT_DB_USER} -gt 32 ]]; then
@@ -84,9 +71,13 @@ main() {
     read -r -p "$(echo -e "${CYAN}PHP version${NC} [8.1]: ")" PHP_VERSION
     PHP_VERSION="${PHP_VERSION:-8.1}"
 
+    # Configurable paths
+    local NGINX_AVAILABLE="/etc/nginx/sites-available"
+    local NGINX_ENABLED="/etc/nginx/sites-enabled"
+    local PHP_CONF_D="/etc/php"
+
     echo ""
 
-    # Display what will be removed
     header "UNINSTALL SUMMARY"
     echo -e "The following will be ${RED}permanently removed${NC}:"
     echo ""
@@ -97,12 +88,15 @@ main() {
         echo -e "  ${BOLD}Directory:${NC} ${INSTALL_DIR} ${YELLOW}(not found)${NC}"
     fi
 
-    if [[ -f "/etc/nginx/sites-available/${INSTANCE_NAME}.conf" ]]; then
-        echo -e "  ${BOLD}Nginx config:${NC} /etc/nginx/sites-available/${INSTANCE_NAME}.conf"
+    local nginx_config="${NGINX_AVAILABLE}/${INSTANCE_NAME}.conf"
+    local nginx_symlink="${NGINX_ENABLED}/${INSTANCE_NAME}.conf"
+
+    if [[ -f "${nginx_config}" ]]; then
+        echo -e "  ${BOLD}Nginx config:${NC} ${nginx_config}"
     fi
 
-    if [[ -L "/etc/nginx/sites-enabled/${INSTANCE_NAME}.conf" ]]; then
-        echo -e "  ${BOLD}Nginx symlink:${NC} /etc/nginx/sites-enabled/${INSTANCE_NAME}.conf"
+    if [[ -L "${nginx_symlink}" ]]; then
+        echo -e "  ${BOLD}Nginx symlink:${NC} ${nginx_symlink}"
     fi
 
     if mysql -e "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${DB_NAME}';" 2>/dev/null | grep -q "${DB_NAME}"; then
@@ -117,7 +111,7 @@ main() {
         echo -e "  ${BOLD}Database user:${NC} ${DB_USER} ${YELLOW}(not found)${NC}"
     fi
 
-    local php_ini="/etc/php/${PHP_VERSION}/fpm/conf.d/99-moodle.ini"
+    local php_ini="${PHP_CONF_D}/${PHP_VERSION}/fpm/conf.d/99-moodle.ini"
     if [[ -f "${php_ini}" ]]; then
         echo -e "  ${BOLD}PHP config:${NC} ${php_ini}"
     fi
@@ -137,10 +131,6 @@ main() {
     echo ""
     header "UNINSTALLING"
 
-    # 1. Disable and remove nginx config
-    local nginx_config="/etc/nginx/sites-available/${INSTANCE_NAME}.conf"
-    local nginx_symlink="/etc/nginx/sites-enabled/${INSTANCE_NAME}.conf"
-
     if [[ -L "${nginx_symlink}" ]]; then
         info "Disabling nginx site: ${INSTANCE_NAME}"
         rm -f "${nginx_symlink}"
@@ -153,10 +143,13 @@ main() {
 
     if [[ -L "${nginx_symlink}" ]] || [[ -f "${nginx_config}" ]]; then
         info "Reloading nginx"
-        nginx -t && systemctl reload nginx || warn "Nginx reload failed"
+        local nginx_bin
+        nginx_bin="$(find_binary "nginx" 2>/dev/null || true)"
+        if [[ -n "${nginx_bin}" ]]; then
+            "${nginx_bin}" -t && systemctl reload nginx || warn "Nginx reload failed"
+        fi
     fi
 
-    # 2. Drop database and user
     if mysql -e "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${DB_NAME}';" 2>/dev/null | grep -q "${DB_NAME}"; then
         drop_database "${DB_NAME}"
     else
@@ -169,7 +162,6 @@ main() {
         info "Database user '${DB_USER}' does not exist, skipping."
     fi
 
-    # 3. Remove deployment directory
     if [[ -d "${INSTALL_DIR}" ]]; then
         info "Removing installation directory: ${INSTALL_DIR}"
         rm -rf "${INSTALL_DIR}"
@@ -178,10 +170,9 @@ main() {
         info "Directory '${INSTALL_DIR}' does not exist, skipping."
     fi
 
-    # 4. Remove PHP config
-    local php_ini_file="/etc/php/${PHP_VERSION}/fpm/conf.d/99-moodle.ini"
+    local php_ini_file="${PHP_CONF_D}/${PHP_VERSION}/fpm/conf.d/99-moodle.ini"
     if [[ -f "${php_ini_file}" ]]; then
-        remove_php_config "${PHP_VERSION}"
+        remove_php_config "${PHP_VERSION}" "${PHP_CONF_D}"
     else
         info "PHP config '${php_ini_file}' does not exist, skipping."
     fi

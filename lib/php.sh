@@ -2,15 +2,14 @@
 # Moodle Deployer - PHP configuration
 # Creates Moodle-specific PHP-FPM ini file and restarts PHP-FPM
 
-PHP_CONF_D="/etc/php"  # Base path, version will be appended
-
 configure_php() {
     local php_version="$1"
+    local php_conf_d="${2:-/etc/php}"
 
     header "PHP CONFIGURATION"
 
     local template="${SCRIPT_DIR}/templates/php.ini.tpl"
-    local conf_dir="${PHP_CONF_D}/${php_version}/fpm/conf.d"
+    local conf_dir="${php_conf_d}/${php_version}/fpm/conf.d"
     local conf_file="${conf_dir}/99-moodle.ini"
 
     if [[ ! -f "${template}" ]]; then
@@ -41,7 +40,8 @@ configure_php() {
 
 remove_php_config() {
     local php_version="$1"
-    local conf_file="${PHP_CONF_D}/${php_version}/fpm/conf.d/99-moodle.ini"
+    local php_conf_d="${2:-/etc/php}"
+    local conf_file="${php_conf_d}/${php_version}/fpm/conf.d/99-moodle.ini"
 
     if [[ -f "${conf_file}" ]]; then
         info "Removing Moodle PHP configuration"

@@ -2,8 +2,6 @@
 # Moodle Deployer - Backup restoration
 # Locates latest backups and extracts them to the deployment directories
 
-BACKUP_ROOT="/srv/backups/moodlelms"
-
 find_latest_backup() {
     local directory="$1"
     local pattern="${2:-*.tar.gz}"
@@ -19,14 +17,14 @@ find_latest_backup() {
 }
 
 detect_db_backup() {
-    local db_dir="${BACKUP_ROOT}/db"
+    local backup_root="$1"
+    local db_dir="${backup_root}/db"
 
     if [[ ! -d "${db_dir}" ]]; then
         echo ""
         return
     fi
 
-    # Try .sql first, then .sql.gz, then .tar.gz
     local backup
     backup="$(find_latest_backup "${db_dir}" "*.sql")"
     if [[ -n "${backup}" ]]; then
@@ -57,7 +55,6 @@ extract_tar_gz() {
 
     tar -xzf "${archive}" -C "${target}" 2>/dev/null
 
-    # Detect if extraction created a single top-level directory
     local entries=()
     shopt -s nullglob
     entries=("${target}"/* "${target}"/.*)

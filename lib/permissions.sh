@@ -4,6 +4,7 @@
 
 set_code_permissions() {
     local moodle_dir="$1"
+    local web_user="${2:-www-data}"
 
     header "SETTING CODE PERMISSIONS"
 
@@ -12,8 +13,8 @@ set_code_permissions() {
         return 1
     fi
 
-    info "Setting ownership to www-data:www-data"
-    chown -R www-data:www-data "${moodle_dir}"
+    info "Setting ownership to ${web_user}:${web_user}"
+    chown -R "${web_user}:${web_user}" "${moodle_dir}"
 
     info "Setting directory permissions to 755"
     find "${moodle_dir}" -type d -exec chmod 755 {} \;
@@ -21,7 +22,6 @@ set_code_permissions() {
     info "Setting file permissions to 644"
     find "${moodle_dir}" -type f -exec chmod 644 {} \;
 
-    # Ensure PHP scripts are readable
     chmod 644 "${moodle_dir}/index.php" 2>/dev/null || true
 
     ok "Code permissions set successfully"
@@ -29,6 +29,7 @@ set_code_permissions() {
 
 set_moodledata_permissions() {
     local moodledata_dir="$1"
+    local web_user="${2:-www-data}"
 
     header "SETTING MOODLEDATA PERMISSIONS"
 
@@ -37,8 +38,8 @@ set_moodledata_permissions() {
         mkdir -p "${moodledata_dir}"
     fi
 
-    info "Setting ownership to www-data:www-data"
-    chown -R www-data:www-data "${moodledata_dir}"
+    info "Setting ownership to ${web_user}:${web_user}"
+    chown -R "${web_user}:${web_user}" "${moodledata_dir}"
 
     info "Setting directory permissions to 770"
     find "${moodledata_dir}" -type d -exec chmod 770 {} \;
@@ -52,42 +53,39 @@ set_moodledata_permissions() {
 verify_permissions() {
     local moodle_dir="$1"
     local moodledata_dir="$2"
+    local web_user="${3:-www-data}"
 
     header "VERIFYING PERMISSIONS"
 
     local issues=0
 
-    # Check code directory ownership
     local owner
     owner="$(stat -c '%U:%G' "${moodle_dir}" 2>/dev/null)"
-    if [[ "${owner}" != "www-data:www-data" ]]; then
-        warn "Code directory owner is ${owner}, expected www-data:www-data"
+    if [[ "${owner}" != "${web_user}:${web_user}" ]]; then
+        warn "Code directory owner is ${owner}, expected ${web_user}:${web_user}"
         issues=$((issues + 1))
     fi
 
-    # Check moodledata directory ownership
     if [[ -d "${moodledata_dir}" ]]; then
         owner="$(stat -c '%U:%G' "${moodledata_dir}" 2>/dev/null)"
-        if [[ "${owner}" != "www-data:www-data" ]]; then
-            warn "Moodledata directory owner is ${owner}, expected www-data:www-data"
+        if [[ "${owner}" != "${web_user}:${web_user}" ]]; then
+            warn "Moodledata directory owner is ${owner}, expected ${web_user}:${web_user}"
             issues=$((issues + 1))
         fi
     fi
 
-    # Check if www-data can read code files
-    if sudo -u www-data test -r "${moodle_dir}/index.php" 2>/dev/null; then
-        ok "www-data can read code files"
+    if sudo -u "${web_user}" test -r "${moodle_dir}/index.php" 2>/dev/null; then
+        ok "${web_user} can read code files"
     else
-        warn "www-data cannot read code files"
+        warn "${web_user} cannot read code files"
         issues=$((issues + 1))
     fi
 
-    # Check if www-data can write to moodledata
     if [[ -d "${moodledata_dir}" ]]; then
-        if sudo -u www-data test -w "${moodledata_dir}" 2>/dev/null; then
-            ok "www-data can write to moodledata"
+        if sudo -u "${web_user}" test -w "${moodledata_dir}" 2>/dev/null; then
+            ok "${web_user} can write to moodledata"
         else
-            warn "www-data cannot write to moodledata"
+            warn "${web_user} cannot write to moodledata"
             issues=$((issues + 1))
         fi
     fi
