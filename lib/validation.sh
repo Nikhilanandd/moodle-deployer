@@ -101,10 +101,16 @@ check_disk_space() {
     local path="$1"
     local required_mb="${2:-1024}"
     local available_mb
+    local check_path="${path}"
 
-    available_mb="$(df -m "${path}" 2>/dev/null | awk 'NR==2 {print $4}')"
+    # Walk up until we find an existing directory (df needs existing path)
+    while [[ ! -d "${check_path}" ]] && [[ "${check_path}" != "/" ]]; do
+        check_path="$(dirname "${check_path}")"
+    done
+
+    available_mb="$(df -m "${check_path}" 2>/dev/null | awk 'NR==2 {print $4}')"
     if [[ -z "${available_mb}" ]] || [[ "${available_mb}" -lt "${required_mb}" ]]; then
-        error "Insufficient disk space at ${path}. Required: ${required_mb}MB, Available: ${available_mb:-0}MB."
+        error "Insufficient disk space at ${path} (checked: ${check_path}). Required: ${required_mb}MB, Available: ${available_mb:-0}MB."
         return 1
     fi
     ok "Disk space sufficient: ${available_mb}MB available at ${path}"
