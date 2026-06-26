@@ -97,7 +97,7 @@ cleanup_install_files() {
     rm -f "${moodle_dir}/config.php"
     rm -f "${moodle_dir}/config.php.bak"
 
-    local runtime_dirs=("cache" "localcache" "temp" "trashdir" "sessions")
+    local runtime_dirs=("localcache" "temp" "trashdir" "sessions")
     local dir
     for dir in "${runtime_dirs[@]}"; do
         local target="${moodle_dir}/${dir}"
